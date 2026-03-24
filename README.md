@@ -1,7 +1,9 @@
 # Pure External Organization Cleaning Wizard
 
 A tool for managing, matching, and merging external organizations in [Pure](https://www.elsevier.com/products/pure) using the [ROR](https://ror.org) (Research Organization Registry).
-![Uploading Skærmbillede 2026-03-24 kl. 13.42.05.png…]()
+
+<img width="1260" height="544" alt="Skærmbillede 2026-03-24 kl  13 42 05" src="https://github.com/user-attachments/assets/74848148-4578-4cc5-b7f2-775752097fbd" />
+
 
 Designed for institutions with tens of thousands of external organizations where duplicates accumulate over time. The tool identifies duplicates by matching organizations against ROR, then lets you merge them with human-in-the-loop confirmation.
 
