@@ -17,7 +17,7 @@ export function ConfirmModal({
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
       <div className="mx-4 w-full max-w-lg rounded-xl bg-white shadow-2xl flex flex-col max-h-[90vh]">
         <h3 className="px-6 pt-6 pb-4 text-lg font-semibold text-gray-900 shrink-0">{title}</h3>
-        <div className="px-6 text-sm text-gray-700 overflow-y-auto min-h-0">{children}</div>
+        <div className="px-6 text-sm text-gray-700 overflow-y-auto overflow-x-hidden min-h-0">{children}</div>
         <div className="px-6 pt-4 pb-6 flex justify-end gap-3 shrink-0">
           <button
             onClick={onCancel}

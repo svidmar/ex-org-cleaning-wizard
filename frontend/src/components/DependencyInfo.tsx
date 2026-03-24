@@ -23,13 +23,13 @@ export function DependencyInfo({ uuid }: { uuid: string }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-2 text-xs text-gray-500">
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
       {Object.entries(deps.byType).map(([type, count]) => (
-        <span key={type} title={type}>
+        <span key={type} title={type} className="truncate max-w-48">
           {count} {type}
         </span>
       ))}
-      <span className="text-gray-400">({deps.total} total)</span>
+      <span className="text-gray-400 shrink-0">({deps.total} total)</span>
     </span>
   );
 }

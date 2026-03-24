@@ -44,8 +44,15 @@ export function HistoryView() {
 
   return (
     <div>
-      <div className="mb-2 text-sm text-gray-500">
-        {total} total actions
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm text-gray-500">{total} total actions</div>
+        <a
+          href="/api/history/download"
+          download
+          className="rounded-lg bg-[#211a52] px-4 py-2 text-xs font-medium text-white hover:bg-[#594fbf] transition"
+        >
+          Download CSV
+        </a>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
@@ -59,10 +66,10 @@ export function HistoryView() {
                 Organization
               </th>
               <th className="px-3 py-2 text-left font-medium text-gray-600">
-                ROR
+                Merged into
               </th>
               <th className="px-3 py-2 text-left font-medium text-gray-600">
-                Score
+                ROR
               </th>
               <th className="px-3 py-2 text-left font-medium text-gray-600">
                 Time
@@ -70,38 +77,53 @@ export function HistoryView() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {items.map((h) => (
-              <tr key={h.id}>
-                <td className="px-3 py-2">
-                  <span
-                    className={cn(
-                      "rounded px-1.5 py-0.5 text-[10px] font-medium",
-                      h.action === "linked" && "bg-blue-100 text-blue-700",
-                      h.action === "merged" &&
-                        "bg-emerald-100 text-emerald-700",
-                      h.action === "skipped" && "bg-gray-100 text-gray-600"
+            {items.map((h) => {
+              const details = parseDetails(h.details);
+              return (
+                <tr key={h.id}>
+                  <td className="px-3 py-2">
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                        h.action === "linked" &&
+                          "bg-[#594fbf]/10 text-[#594fbf]",
+                        h.action === "merged" &&
+                          "bg-[#0e8563]/10 text-[#0e8563]",
+                        h.action === "skipped" && "bg-gray-100 text-gray-600"
+                      )}
+                    >
+                      {h.action}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="text-gray-800">{h.orgName}</div>
+                    <CopyableUuid uuid={h.orgUuid} />
+                  </td>
+                  <td className="px-3 py-2">
+                    {details.target_name ? (
+                      <>
+                        <div className="text-gray-800">
+                          {details.target_name}
+                        </div>
+                        {details.target_uuid && (
+                          <CopyableUuid uuid={details.target_uuid} />
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-gray-300">-</span>
                     )}
-                  >
-                    {h.action}
-                  </span>
-                </td>
-                <td className="px-3 py-2">
-                  <div className="text-gray-800">{h.orgName}</div>
-                  <CopyableUuid uuid={h.orgUuid} />
-                </td>
-                <td className="px-3 py-2 font-mono text-gray-500">
-                  {h.rorId?.replace("https://ror.org/", "") || "-"}
-                </td>
-                <td className="px-3 py-2 tabular-nums">
-                  {h.score != null ? `${Math.round(h.score * 100)}%` : "-"}
-                </td>
-                <td className="px-3 py-2 text-gray-400">
-                  {h.createdAt
-                    ? new Date(h.createdAt).toLocaleString()
-                    : "-"}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-gray-500">
+                    {h.rorId?.replace("https://ror.org/", "") || "-"}
+                  </td>
+                  <td className="px-3 py-2 text-gray-400">
+                    {h.createdAt
+                      ? new Date(h.createdAt).toLocaleString()
+                      : "-"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -124,4 +146,12 @@ export function HistoryView() {
       </div>
     </div>
   );
+}
+
+function parseDetails(raw: string): Record<string, string> {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }

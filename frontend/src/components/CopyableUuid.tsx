@@ -11,9 +11,9 @@ export function CopyableUuid({ uuid }: { uuid: string }) {
         setTimeout(() => setCopied(false), 1500);
       }}
       title="Click to copy UUID"
-      className="inline-flex items-center gap-1 font-mono text-xs text-gray-400 hover:text-[#594fbf] transition cursor-pointer"
+      className="inline-flex items-center gap-1 font-mono text-xs text-gray-400 hover:text-[#594fbf] transition cursor-pointer truncate max-w-full"
     >
-      {uuid}
+      <span className="truncate">{uuid}</span>
       {copied && <span className="text-[10px] text-emerald-600">Copied!</span>}
     </button>
   );

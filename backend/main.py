@@ -358,17 +358,26 @@ async def merge_organizations(req: MergeRequest):
     # Execute merge in Pure
     await pure_client.merge_organizations(req.targetUuid, req.sourceUuids)
 
+    # Get source org names before removing them
+    source_orgs = {}
+    for source_uuid in req.sourceUuids:
+        src = await db.get_organization(source_uuid)
+        source_orgs[source_uuid] = src["name"] if src else "Unknown"
+
     # Remove merged orgs from SQLite
     await db.remove_organizations(req.sourceUuids)
 
-    # Log actions
+    # Log actions with full source→target detail
     for source_uuid in req.sourceUuids:
         await db.log_action(
             action="merged",
             org_uuid=source_uuid,
-            org_name=target["name"],
+            org_name=source_orgs.get(source_uuid, "Unknown"),
             ror_id=req.rorId or target.get("ror_id"),
-            details={"target_uuid": req.targetUuid},
+            details={
+                "target_uuid": req.targetUuid,
+                "target_name": target["name"],
+            },
         )
 
     return {
@@ -398,6 +407,44 @@ async def history(
         item["matchingType"] = item.pop("matching_type", None)
         item["createdAt"] = item.pop("created_at", "")
     return {"items": items, "total": total}
+
+
+@app.get("/api/history/download")
+async def history_download():
+    """Download full action history as CSV."""
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+
+    items, _ = await db.get_history(limit=100000, offset=0)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Action", "Org UUID", "Org Name", "ROR ID", "ROR Name",
+        "Score", "Matching Type", "Target UUID", "Target Name", "Timestamp",
+    ])
+    for item in items:
+        details = json.loads(item.get("details", "{}"))
+        writer.writerow([
+            item.get("action", ""),
+            item.get("org_uuid", ""),
+            item.get("org_name", ""),
+            item.get("ror_id", ""),
+            item.get("ror_name", ""),
+            item.get("score", ""),
+            item.get("matching_type", ""),
+            details.get("target_uuid", ""),
+            details.get("target_name", ""),
+            item.get("created_at", ""),
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=cleaning-wizard-history.csv"},
+    )
 
 
 if __name__ == "__main__":
