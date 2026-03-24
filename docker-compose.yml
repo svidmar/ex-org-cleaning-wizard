@@ -1,0 +1,54 @@
+services:
+  elasticsearch7:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.22
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  mysql8:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ror
+      MYSQL_DATABASE: ror
+      MYSQL_USER: ror
+      MYSQL_PASSWORD: ror
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ror-api:
+    image: rorcommunity/ror-api:latest
+    ports:
+      - "9292:80"
+    depends_on:
+      elasticsearch7:
+        condition: service_healthy
+      mysql8:
+        condition: service_healthy
+    environment:
+      - ELASTIC_HOST=elasticsearch7
+      - ELASTIC_PORT=9200
+      - MYSQL_HOST=mysql8
+      - MYSQL_USER=ror
+      - MYSQL_PASSWORD=ror
+      - MYSQL_DB=ror
+
+volumes:
+  es_data:
+  mysql_data:

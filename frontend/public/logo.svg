@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Wizard hat -->
+  <path d="M24 4L10 38h28L24 4z" fill="#594fbf"/>
+  <path d="M24 4L10 38h28L24 4z" fill="url(#grad)" opacity="0.5"/>
+  <!-- Hat brim -->
+  <ellipse cx="24" cy="38" rx="18" ry="5" fill="#594fbf"/>
+  <ellipse cx="24" cy="38" rx="18" ry="5" fill="white" opacity="0.15"/>
+  <!-- Hat band -->
+  <path d="M13 33h22l1.5 5H11.5L13 33z" fill="white" opacity="0.9"/>
+  <!-- Sparkles -->
+  <path d="M39 10l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5L35.5 13l2.5-1z" fill="#df8e2e"/>
+  <circle cx="36" cy="8" r="1" fill="#df8e2e" opacity="0.7"/>
+  <circle cx="42" cy="14" r="0.8" fill="#b19335"/>
+  <path d="M12 10l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" fill="white" opacity="0.6"/>
+  <path d="M8 18l.4 1 1 .4-1 .4-.4 1-.4-1-1-.4 1-.4z" fill="white" opacity="0.4"/>
+  <defs>
+    <linearGradient id="grad" x1="24" y1="4" x2="24" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="white" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
