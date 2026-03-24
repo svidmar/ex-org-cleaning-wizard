@@ -4,6 +4,8 @@ A tool for managing, matching, and merging external organizations in [Pure](http
 
 Designed for institutions with tens of thousands of external organizations where duplicates accumulate over time. The tool identifies duplicates by matching organizations against ROR, then lets you merge them with human-in-the-loop confirmation.
 
+> **Use at your own risk.** Merging external organizations in Pure is **irreversible**. There is no undo. While the tool maintains an audit trail and requires human confirmation before every merge, reversing a wrong merge means manually recreating the organization and reassigning all its associations — which is painful even with the CSV export. Start with high-confidence matches, review carefully, and when in doubt, skip.
+
 ## How it works
 
 1. **Sync** all external organizations from your Pure instance into a local SQLite database
