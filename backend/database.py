@@ -474,7 +474,17 @@ async def get_stats() -> dict:
         "forApprovalNoRor": for_approval_no_ror,
         "totalMerged": total_merged,
         "totalLinked": total_linked,
+        "lastSyncedAt": await _get_last_synced(),
     }
+
+
+async def _get_last_synced() -> str | None:
+    """Get the most recent synced_at timestamp."""
+    d = await get_db()
+    rows = await d.execute_fetchall(
+        "SELECT MAX(synced_at) FROM organizations"
+    )
+    return rows[0][0] if rows and rows[0][0] else None
 
 
 # ---------------------------------------------------------------------------

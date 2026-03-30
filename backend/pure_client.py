@@ -2,11 +2,48 @@
 
 import asyncio
 import json
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import httpx
 
 LOCALE_PRIORITY = ["en_GB", "en_US", "da_DK"]
+
+
+class PureApiError(Exception):
+    """Error from the Pure API with status code and response body."""
+
+    def __init__(self, status_code: int, body, raw_text: str = ""):
+        self.status_code = status_code
+        self.body = body
+        self.raw_text = raw_text
+        # Extract a readable message from various Pure error formats
+        msg = ""
+        if isinstance(body, dict):
+            # Try known Pure error fields
+            msg = (
+                body.get("title")
+                or body.get("message")
+                or body.get("detail")
+                or ""
+            )
+            # Pure sometimes nests the real error in userMessages
+            user_msgs = body.get("userMessages") or []
+            if user_msgs:
+                msg = "; ".join(m.get("message", str(m)) for m in user_msgs)
+            # Sometimes in "cause" or nested "error"
+            if not msg and body.get("cause"):
+                msg = str(body["cause"])
+            if not msg:
+                msg = json.dumps(body, indent=2)
+        if not msg:
+            msg = raw_text[:500] if raw_text else str(body)
+        # If msg is still just "Internal server error", include the raw body
+        if msg.lower().strip() in ("internal server error", ""):
+            msg = f"Internal server error. Raw response: {raw_text[:1000]}" if raw_text else "Internal server error (no details from Pure)"
+        super().__init__(f"Pure API {status_code}: {msg}")
 
 ROR_TYPE = {
     "uri": "/dk/atira/pure/ueoexternalorganisation/ueoexternalorganisationsources/ror",
@@ -142,7 +179,16 @@ class PureClient:
             headers={**self._headers(), "Content-Type": "application/json"},
             json=json_body,
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # Get the full raw response for diagnostics
+            raw_text = resp.text
+            body: str | dict = raw_text
+            try:
+                body = resp.json()
+            except Exception:
+                pass
+            logger.error(f"Pure API error {resp.status_code} on POST {path}: {raw_text[:2000]}")
+            raise PureApiError(resp.status_code, body, raw_text)
         return resp.json()
 
     async def get_external_organizations(self, size: int = 100, offset: int = 0, search: str = None) -> dict:

@@ -16,6 +16,7 @@ export function MergeView({
   const [confirmMerge, setConfirmMerge] = useState<{
     group: MergeGroup;
     selected: Organization[];
+    linkRor: boolean;
   } | null>(null);
   const [merging, setMerging] = useState(false);
   const [expandedUuid, setExpandedUuid] = useState<string | null>(null);
@@ -23,6 +24,9 @@ export function MergeView({
   const [search, setSearch] = useState("");
   // Track selected merge target per group (by group index) when multiple approved
   const [selectedTarget, setSelectedTarget] = useState<Record<number, string>>({});
+  // Track whether to skip ROR linking per group
+  const [skipRor, setSkipRor] = useState<Record<number, boolean>>({});
+  const [mergeError, setMergeError] = useState<string | null>(null);
 
   // Track deselected UUIDs per group (by index). Everything is selected by default.
   const [deselected, setDeselected] = useState<Record<number, Set<string>>>(
@@ -66,7 +70,7 @@ export function MergeView({
   };
 
   const doMerge = useCallback(
-    async (group: MergeGroup, selected: Organization[]) => {
+    async (group: MergeGroup, selected: Organization[], linkRor: boolean) => {
       if (group.approved.length !== 1) {
         addToast("Need exactly one approved org as target.", "error");
         return;
@@ -82,31 +86,52 @@ export function MergeView({
         const result = await mergeOrganizations(
           target.uuid,
           sources,
-          group.rorId
+          linkRor ? group.rorId : undefined
         );
+
+        // Build success message
         const actions = [];
         if (result.rorLinked) actions.push("linked ROR");
-        actions.push(`merged ${sources.length} org(s)`);
-        addToast(
-          `${actions.join(" + ")} into ${target.name}`,
-          "success"
+        if (result.mergedCount > 0) actions.push(`merged ${result.mergedCount} org(s)`);
+
+        if (result.mergedCount > 0) {
+          addToast(
+            `${actions.join(" + ")} into ${target.name}`,
+            "success"
+          );
+        }
+
+        // Remove successfully merged orgs from the group
+        const mergedUuids = sources.filter(
+          (uuid) => !result.failed.some((f) => f.uuid === uuid)
         );
-        // Remove group if all for-approval merged, or update it
         setGroups((gs) =>
           gs
             .map((g) => {
               if (g !== group) return g;
               const remaining = g.forApproval.filter(
-                (o) => !sources.includes(o.uuid)
+                (o) => !mergedUuids.includes(o.uuid)
               );
               if (remaining.length === 0) return null;
               return { ...g, forApproval: remaining, total: g.approved.length + remaining.length };
             })
             .filter((g): g is MergeGroup => g !== null)
         );
-        setConfirmMerge(null);
+
+        // Show failures if any
+        if (result.failed.length > 0) {
+          const failLines = result.failed.map(
+            (f) => `${f.name} (${f.uuid.slice(0, 8)}...): ${f.error}`
+          );
+          setMergeError(
+            `${result.mergedCount} merged, ${result.failedCount} failed:\n\n${failLines.join("\n\n")}`
+          );
+        } else {
+          setConfirmMerge(null);
+        }
       } catch (e) {
-        addToast(`Merge failed: ${e}`, "error");
+        const msg = e instanceof Error ? e.message : String(e);
+        setMergeError(msg);
       } finally {
         setMerging(false);
       }
@@ -170,6 +195,25 @@ export function MergeView({
 
         return (
           <>
+            {mergeError && (
+              <div className="mb-4 rounded-xl border border-[#cc445b]/30 bg-[#cc445b]/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-[#cc445b]">Merge failed</div>
+                    <div className="mt-1 text-xs text-gray-700 whitespace-pre-wrap break-words">
+                      {mergeError}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setMergeError(null)}
+                    className="shrink-0 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                  >
+                    &times;
+                  </button>
+                </div>
+              </div>
+            )}
+
             {loading ? (
               <div className="py-12 text-center text-gray-400">
                 Loading merge candidates...
@@ -240,8 +284,14 @@ export function MergeView({
                         </div>
                       </div>
                       <button
-                        onClick={() =>
-                          setConfirmMerge({ group: { ...g, approved: [target] }, selected })
+                        onClick={() => {
+                          setMergeError(null);
+                          setConfirmMerge({
+                            group: { ...g, approved: [target] },
+                            selected,
+                            linkRor: !skipRor[origIdx],
+                          });
+                        }
                         }
                         disabled={!canMerge || selected.length === 0}
                         className="shrink-0 rounded-lg bg-[#0e8563] px-4 py-2 text-xs font-medium text-white hover:bg-[#0e8563]/80 disabled:opacity-30"
@@ -249,6 +299,25 @@ export function MergeView({
                         Merge {selected.length > 0 ? `(${selected.length})` : ""}
                       </button>
                     </div>
+
+                    {/* Option to skip ROR linking */}
+                    {!target?.hasRor && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!skipRor[origIdx]}
+                            onChange={() =>
+                              setSkipRor((prev) => ({
+                                ...prev,
+                                [origIdx]: !prev[origIdx],
+                              }))
+                            }
+                          />
+                          Don't link ROR ID (wrong match)
+                        </label>
+                      </div>
+                    )}
 
                     {/* Multiple approved: select target */}
                     {hasMultipleApproved && (
@@ -353,7 +422,7 @@ export function MergeView({
               : `Confirm Merge (${confirmMerge.selected.length})`
           }
           onConfirm={() =>
-            doMerge(confirmMerge.group, confirmMerge.selected)
+            doMerge(confirmMerge.group, confirmMerge.selected, confirmMerge.linkRor)
           }
           onCancel={() => setConfirmMerge(null)}
         >
@@ -374,7 +443,7 @@ export function MergeView({
                   <div className="mt-2">
                     <DependencyInfo uuid={o.uuid} />
                   </div>
-                  {!o.hasRor && (
+                  {!o.hasRor && confirmMerge.linkRor && (
                     <div className="mt-2 rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
                       ROR ID{" "}
                       <span className="font-mono">
@@ -384,6 +453,11 @@ export function MergeView({
                         )}
                       </span>{" "}
                       will be linked to this org
+                    </div>
+                  )}
+                  {!o.hasRor && !confirmMerge.linkRor && (
+                    <div className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                      ROR ID will NOT be linked (skipped)
                     </div>
                   )}
                 </div>
@@ -421,6 +495,15 @@ export function MergeView({
               All content from the selected for-approval orgs will be
               transferred to the approved target. This cannot be undone.
             </div>
+
+            {mergeError && (
+              <div className="rounded-lg border border-[#cc445b]/30 bg-[#cc445b]/5 p-3 mt-3">
+                <div className="text-sm font-medium text-[#cc445b]">Merge failed</div>
+                <div className="mt-1 text-xs text-gray-700 whitespace-pre-wrap break-words">
+                  {mergeError}
+                </div>
+              </div>
+            )}
           </div>
         </ConfirmModal>
       )}
