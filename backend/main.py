@@ -355,35 +355,43 @@ async def merge_organizations(req: MergeRequest):
         except Exception as e:
             raise HTTPException(400, f"Failed to link ROR ID to target: {e}")
 
-    # Execute merge in Pure
-    await pure_client.merge_organizations(req.targetUuid, req.sourceUuids)
+    # Merge each source individually so one failure doesn't block the rest
+    from pure_client import PureApiError
+    merged_uuids = []
+    failed = []
 
-    # Get source org names before removing them
-    source_orgs = {}
     for source_uuid in req.sourceUuids:
+        # Get source name before attempting merge
         src = await db.get_organization(source_uuid)
-        source_orgs[source_uuid] = src["name"] if src else "Unknown"
+        src_name = src["name"] if src else "Unknown"
 
-    # Remove merged orgs from SQLite
-    await db.remove_organizations(req.sourceUuids)
+        try:
+            await pure_client.merge_organizations(req.targetUuid, [source_uuid])
+            merged_uuids.append(source_uuid)
 
-    # Log actions with full source→target detail
-    for source_uuid in req.sourceUuids:
-        await db.log_action(
-            action="merged",
-            org_uuid=source_uuid,
-            org_name=source_orgs.get(source_uuid, "Unknown"),
-            ror_id=req.rorId or target.get("ror_id"),
-            details={
-                "target_uuid": req.targetUuid,
-                "target_name": target["name"],
-            },
-        )
+            # Remove from SQLite and log
+            await db.remove_organizations([source_uuid])
+            await db.log_action(
+                action="merged",
+                org_uuid=source_uuid,
+                org_name=src_name,
+                ror_id=req.rorId or target.get("ror_id"),
+                details={
+                    "target_uuid": req.targetUuid,
+                    "target_name": target["name"],
+                },
+            )
+        except PureApiError as e:
+            failed.append({"uuid": source_uuid, "name": src_name, "error": str(e)})
+        except Exception as e:
+            failed.append({"uuid": source_uuid, "name": src_name, "error": str(e)})
 
     return {
-        "status": "merged",
+        "status": "partial" if failed else "merged",
         "targetUuid": req.targetUuid,
-        "mergedCount": len(req.sourceUuids),
+        "mergedCount": len(merged_uuids),
+        "failedCount": len(failed),
+        "failed": failed,
         "rorLinked": ror_linked,
     }
 

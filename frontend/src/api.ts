@@ -17,7 +17,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!resp.ok) {
     const body = await resp.text();
-    throw new Error(`API ${resp.status}: ${body}`);
+    // Try to extract a clean error message from JSON response
+    let message = body;
+    try {
+      const json = JSON.parse(body);
+      message = json.detail || json.message || json.title || body;
+    } catch {
+      // body wasn't JSON, use as-is
+    }
+    throw new Error(message);
   }
   return resp.json();
 }
@@ -139,7 +147,13 @@ export async function mergeOrganizations(
   targetUuid: string,
   sourceUuids: string[],
   rorId?: string
-): Promise<{ status: string; mergedCount: number; rorLinked: boolean }> {
+): Promise<{
+  status: string;
+  mergedCount: number;
+  failedCount: number;
+  failed: { uuid: string; name: string; error: string }[];
+  rorLinked: boolean;
+}> {
   return apiFetch(`/organizations/merge`, {
     method: "POST",
     body: JSON.stringify({ targetUuid, sourceUuids, rorId }),

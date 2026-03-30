@@ -92,6 +92,7 @@ export interface Stats {
   forApprovalNoRor: number;
   totalMerged: number;
   totalLinked: number;
+  lastSyncedAt: string | null;
 }
 
 export interface HistoryEntry {
