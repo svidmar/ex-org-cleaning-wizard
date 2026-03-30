@@ -3,6 +3,8 @@
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 
 # Python
 __pycache__/
