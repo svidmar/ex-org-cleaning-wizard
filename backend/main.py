@@ -386,7 +386,18 @@ async def merge_organizations(req: MergeRequest):
         src_name = extract_name(live_src.get("name", {}))
         src_ror = get_ror_id(live_src)
 
-        # Check 3: ROR ID mismatch
+        # Check 3: refuse to merge an approved org into another approved org
+        src_step = extract_workflow(live_src).lower().replace(" ", "")
+        if "approved" in src_step and "forapproval" not in src_step:
+            failed.append({
+                "uuid": source_uuid,
+                "name": src_name,
+                "error": "Source is an approved organization — refusing to merge approved into approved",
+            })
+            live_sources[source_uuid] = None
+            continue
+
+        # Check 4: ROR ID mismatch
         if src_ror and live_target_ror and src_ror != live_target_ror:
             ror_conflicts.append({
                 "uuid": source_uuid,
