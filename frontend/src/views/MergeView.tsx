@@ -371,9 +371,6 @@ export function MergeView({
                                     </>
                                   )}
                                 </div>
-                                <div className="mt-1">
-                                  <DependencyInfo uuid={o.uuid} />
-                                </div>
                               </div>
                             </label>
                           ))}
@@ -557,7 +554,6 @@ function OrgRow({
           {org.country && (
             <div className="text-gray-500">Country: {org.country}</div>
           )}
-          <DependencyInfo uuid={org.uuid} />
         </div>
       )}
     </div>
