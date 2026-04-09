@@ -329,41 +329,141 @@ class MergeRequest(BaseModel):
 
 @app.post("/api/organizations/merge")
 async def merge_organizations(req: MergeRequest):
-    # Verify target is approved in local DB
-    target = await db.get_organization(req.targetUuid)
-    if not target:
-        raise HTTPException(404, "Target organization not found")
+    from pure_client import PureApiError, extract_name, workflow_step as extract_workflow
 
-    step = target["workflow_step"].lower().replace(" ", "")
-    if "approved" not in step or "forapproval" in step:
-        raise HTTPException(400, f"Target must be approved. Current: {target['workflow_step']}")
+    # ---- LIVE VERIFICATION against Pure (not stale SQLite data) ----
+    # Verify target exists and is still approved in Pure
+    try:
+        live_target = await pure_client.get(f"/external-organizations/{req.targetUuid}")
+    except Exception as e:
+        raise HTTPException(404, f"Target org not found in Pure: {e}")
+
+    live_target_name = extract_name(live_target.get("name", {}))
+    live_target_step = extract_workflow(live_target)
+    step_normalized = live_target_step.lower().replace(" ", "")
+    if "approved" not in step_normalized or "forapproval" in step_normalized:
+        raise HTTPException(400, f"Target is no longer approved in Pure. Current status: {live_target_step}")
+
+    # Get target's ROR ID and previousUuids from live Pure data
+    from pure_client import get_ror_id
+    live_target_ror = get_ror_id(live_target)
+    target_previous_uuids = set(live_target.get("previousUuids", []))
+
+    # ---- VERIFY EACH SOURCE against live Pure data ----
+    # Three checks per source:
+    #   1. UUID identity: does Pure return this UUID, or a different one (= already merged)?
+    #   2. previousUuids: is this source already listed as merged into the target?
+    #   3. ROR mismatch: does the source have a different ROR ID than the target?
+    live_sources: dict[str, dict | None] = {}
+    already_merged = []
+    ror_conflicts = []
+
+    for source_uuid in req.sourceUuids:
+        # Check 2: source UUID already in target's previousUuids
+        if source_uuid in target_previous_uuids:
+            already_merged.append(source_uuid)
+            live_sources[source_uuid] = None
+            continue
+
+        try:
+            live_src = await pure_client.get(f"/external-organizations/{source_uuid}")
+        except Exception:
+            already_merged.append(source_uuid)
+            live_sources[source_uuid] = None
+            continue
+
+        # Check 1: UUID identity — if Pure returns a different UUID, the org was merged
+        returned_uuid = live_src.get("uuid", "")
+        if returned_uuid != source_uuid:
+            already_merged.append(source_uuid)
+            live_sources[source_uuid] = None
+            logging.warning(
+                f"Source {source_uuid[:8]}... resolved to {returned_uuid[:8]}... "
+                f"({extract_name(live_src.get('name', {}))}) — already merged"
+            )
+            continue
+
+        src_name = extract_name(live_src.get("name", {}))
+        src_ror = get_ror_id(live_src)
+
+        # Check 3: ROR ID mismatch
+        if src_ror and live_target_ror and src_ror != live_target_ror:
+            ror_conflicts.append({
+                "uuid": source_uuid,
+                "name": src_name,
+                "sourceRor": src_ror,
+                "targetRor": live_target_ror,
+            })
+            live_sources[source_uuid] = None
+            continue
+
+        live_sources[source_uuid] = {
+            "name": src_name,
+            "ror_id": src_ror,
+            "version": live_src.get("version"),
+        }
+
+    if already_merged:
+        logging.warning(f"Skipping {len(already_merged)} source(s) already merged: {already_merged}")
+
+    # Filter to only sources that passed all checks
+    valid_sources = [uuid for uuid in req.sourceUuids if live_sources.get(uuid) is not None]
+
+    if not valid_sources and not ror_conflicts:
+        raise HTTPException(400, "None of the source organizations exist as independent orgs in Pure anymore. They may have already been merged.")
+
+    if ror_conflicts:
+        conflict_details = "\n".join(
+            f"  {c['name']} ({c['uuid'][:8]}...): has ROR {c['sourceRor']}, target has {c['targetRor']}"
+            for c in ror_conflicts
+        )
+        logging.warning(f"ROR ID mismatches (will skip these):\n{conflict_details}")
+
+    # Also update local DB target info
+    target = await db.get_organization(req.targetUuid)
+    target_name = live_target_name
 
     # Link ROR ID to target if provided and not already linked
     ror_linked = False
-    if req.rorId and not target.get("has_ror"):
-        try:
-            link_result = await pure_client.link_ror_id(req.targetUuid, req.rorId)
-            if link_result["status"] == "linked":
-                await db.mark_org_linked(req.targetUuid, req.rorId, link_result.get("new_version"))
-                ror_linked = True
-                await db.log_action(
-                    action="linked",
-                    org_uuid=req.targetUuid,
-                    org_name=target["name"],
-                    ror_id=req.rorId,
-                )
-        except Exception as e:
-            raise HTTPException(400, f"Failed to link ROR ID to target: {e}")
+    if req.rorId:
+        from pure_client import has_ror_id
+        if not has_ror_id(live_target):
+            try:
+                link_result = await pure_client.link_ror_id(req.targetUuid, req.rorId)
+                if link_result["status"] == "linked":
+                    await db.mark_org_linked(req.targetUuid, req.rorId, link_result.get("new_version"))
+                    ror_linked = True
+                    await db.log_action(
+                        action="linked",
+                        org_uuid=req.targetUuid,
+                        org_name=target_name,
+                        ror_id=req.rorId,
+                    )
+            except Exception as e:
+                raise HTTPException(400, f"Failed to link ROR ID to target: {e}")
 
     # Merge each source individually so one failure doesn't block the rest
-    from pure_client import PureApiError
     merged_uuids = []
     failed = []
 
-    for source_uuid in req.sourceUuids:
-        # Get source name before attempting merge
-        src = await db.get_organization(source_uuid)
-        src_name = src["name"] if src else "Unknown"
+    # Report already-merged sources
+    for uuid in already_merged:
+        src_db = await db.get_organization(uuid)
+        src_name = src_db["name"] if src_db else "Unknown"
+        failed.append({"uuid": uuid, "name": src_name, "error": "Already merged in Pure (skipped)"})
+        await db.remove_organizations([uuid])
+
+    # Report ROR conflicts
+    for c in ror_conflicts:
+        failed.append({
+            "uuid": c["uuid"],
+            "name": c["name"],
+            "error": f"ROR ID mismatch: source has {c['sourceRor']}, target has {c['targetRor']} (skipped)",
+        })
+
+    for source_uuid in valid_sources:
+        src_info = live_sources.get(source_uuid)
+        src_name = src_info["name"] if src_info else "Unknown"
 
         try:
             await pure_client.merge_organizations(req.targetUuid, [source_uuid])
@@ -375,10 +475,10 @@ async def merge_organizations(req: MergeRequest):
                 action="merged",
                 org_uuid=source_uuid,
                 org_name=src_name,
-                ror_id=req.rorId or target.get("ror_id"),
+                ror_id=req.rorId or (target.get("ror_id") if target else None),
                 details={
                     "target_uuid": req.targetUuid,
-                    "target_name": target["name"],
+                    "target_name": target_name,
                 },
             )
         except PureApiError as e:
