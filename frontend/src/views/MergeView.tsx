@@ -108,7 +108,7 @@ export function MergeView({
         setGroups((gs) =>
           gs
             .map((g) => {
-              if (g !== group) return g;
+              if (g.rorId !== group.rorId || g.country !== group.country) return g;
               const remaining = g.forApproval.filter(
                 (o) => !mergedUuids.includes(o.uuid)
               );
