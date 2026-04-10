@@ -203,8 +203,26 @@ class PureClient:
         return await self.get(f"/external-organizations/{uuid}")
 
     async def link_ror_id(self, uuid: str, ror_id: str) -> dict:
-        """Write a ROR ID to a Pure external organization."""
+        """Write a ROR ID to a Pure external organization.
+
+        Verifies that the org still exists as an independent entity (not merged).
+        Pure redirects fetches of consumed UUIDs to the survivor org, so we must
+        check that the returned UUID matches what we asked for.
+        """
         org = await self.get(f"/external-organizations/{uuid}")
+
+        # UUID identity check — Pure redirects merged UUIDs to the survivor
+        returned_uuid = org.get("uuid", "")
+        if returned_uuid != uuid:
+            survivor_name = extract_name(org.get("name", {}))
+            raise PureApiError(
+                409,
+                {
+                    "title": f"UUID {uuid} has been merged into another organization "
+                             f"({survivor_name} / {returned_uuid}). Refusing to link "
+                             f"ROR ID — this would write to the wrong org."
+                },
+            )
 
         if has_ror_id(org):
             return {"status": "already_linked", "ror_id": get_ror_id(org)}

@@ -449,6 +449,29 @@ async def get_stats() -> dict:
     )
     for_approval_no_ror = rows[0][0]
 
+    # Count orgs with multiple ROR identifiers
+    rows = await db.execute_fetchall(
+        "SELECT uuid, name, identifiers FROM organizations WHERE has_ror = 1"
+    )
+    multi_ror_orgs = []
+    for r in rows:
+        try:
+            idents = json.loads(r[2] or "[]")
+            ror_ids = set()
+            for i in idents:
+                type_uri = (i.get("type") or {}).get("uri", "")
+                id_val = i.get("id", "")
+                if "ror" in type_uri.lower() or "ror.org" in id_val.lower():
+                    ror_ids.add(id_val)
+            if len(ror_ids) > 1:
+                multi_ror_orgs.append({
+                    "uuid": r[0],
+                    "name": r[1],
+                    "rorIds": sorted(ror_ids),
+                })
+        except Exception:
+            pass
+
     # Action counts from log
     rows = await db.execute_fetchall(
         "SELECT COUNT(*) FROM action_log WHERE action = 'merged'"
@@ -475,6 +498,8 @@ async def get_stats() -> dict:
         "totalMerged": total_merged,
         "totalLinked": total_linked,
         "lastSyncedAt": await _get_last_synced(),
+        "multiRorCount": len(multi_ror_orgs),
+        "multiRorOrgs": multi_ror_orgs[:50],  # cap for response size
     }
 
 

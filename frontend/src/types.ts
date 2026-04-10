@@ -93,6 +93,8 @@ export interface Stats {
   totalMerged: number;
   totalLinked: number;
   lastSyncedAt: string | null;
+  multiRorCount: number;
+  multiRorOrgs: { uuid: string; name: string; rorIds: string[] }[];
 }
 
 export interface HistoryEntry {

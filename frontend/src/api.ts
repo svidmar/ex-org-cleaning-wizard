@@ -134,6 +134,20 @@ export async function linkRor(
   });
 }
 
+// Validate merge
+export async function validateMerge(
+  targetUuid: string,
+  sourceUuids: string[]
+): Promise<{
+  valid: string[];
+  issues: { uuid: string; error: string }[];
+}> {
+  return apiFetch(`/organizations/validate-merge`, {
+    method: "POST",
+    body: JSON.stringify({ targetUuid, sourceUuids }),
+  });
+}
+
 // Merge
 export async function fetchMergeCandidates(
   minScore = 0.8
