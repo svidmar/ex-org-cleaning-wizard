@@ -145,6 +145,50 @@ export function DashboardView() {
         </div>
       )}
 
+      {stats && stats.multiRorCount > 0 && (
+        <div className="mb-6 rounded-xl border border-[#cc445b]/30 bg-[#cc445b]/5 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-[#cc445b]">
+                Warning: {stats.multiRorCount} organization(s) have multiple ROR IDs
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                These organizations have more than one ROR identifier. Usually a sign of an incorrect merge or data entry error — investigate and clean up.
+              </div>
+              <div className="mt-3 space-y-1.5">
+                {stats.multiRorOrgs.slice(0, 10).map((o) => (
+                  <div
+                    key={o.uuid}
+                    className="rounded bg-white p-2 text-xs"
+                  >
+                    <div className="font-medium text-gray-900 truncate">{o.name}</div>
+                    <div className="font-mono text-gray-400">{o.uuid}</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {o.rorIds.map((rid) => (
+                        <a
+                          key={rid}
+                          href={rid}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded bg-[#cc445b]/10 px-1.5 py-0.5 text-[#cc445b] hover:underline"
+                        >
+                          {rid.replace("https://ror.org/", "")}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {stats.multiRorCount > 10 && (
+                  <div className="text-xs text-gray-500">
+                    ...and {stats.multiRorCount - 10} more
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {stats && (stats.totalMerged > 0 || stats.totalLinked > 0) && (
         <div className="mb-6">
           <h2 className="mb-3 text-sm font-semibold text-gray-700">

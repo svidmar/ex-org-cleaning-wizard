@@ -273,7 +273,11 @@ class LinkRorRequest(BaseModel):
 
 @app.post("/api/organizations/link-ror")
 async def link_ror(req: LinkRorRequest):
-    result = await pure_client.link_ror_id(req.uuid, req.rorId)
+    from pure_client import PureApiError
+    try:
+        result = await pure_client.link_ror_id(req.uuid, req.rorId)
+    except PureApiError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
 
     if result["status"] == "linked":
         # Update SQLite
@@ -325,6 +329,69 @@ class MergeRequest(BaseModel):
     targetUuid: str
     sourceUuids: list[str]
     rorId: Optional[str] = None  # Link this ROR ID to target if not already linked
+
+
+class ValidateRequest(BaseModel):
+    targetUuid: str
+    sourceUuids: list[str]
+
+
+@app.post("/api/organizations/validate-merge")
+async def validate_merge(req: ValidateRequest):
+    """Pre-validate a merge group against live Pure data without executing anything."""
+    from pure_client import extract_name, workflow_step as extract_workflow, get_ror_id
+
+    issues = []
+    valid = []
+
+    # Fetch target live
+    try:
+        live_target = await pure_client.get(f"/external-organizations/{req.targetUuid}")
+    except Exception:
+        return {"valid": [], "issues": [{"uuid": req.targetUuid, "error": "Target not found in Pure"}]}
+
+    target_step = extract_workflow(live_target).lower().replace(" ", "")
+    if "approved" not in target_step or "forapproval" in target_step:
+        return {"valid": [], "issues": [{"uuid": req.targetUuid, "error": f"Target is no longer approved ({extract_workflow(live_target)})"}]}
+
+    live_target_ror = get_ror_id(live_target)
+    target_previous = set(live_target.get("previousUuids", []))
+
+    for source_uuid in req.sourceUuids:
+        # Check previousUuids
+        if source_uuid in target_previous:
+            issues.append({"uuid": source_uuid, "error": "Already merged into target"})
+            continue
+
+        try:
+            live_src = await pure_client.get(f"/external-organizations/{source_uuid}")
+        except Exception:
+            issues.append({"uuid": source_uuid, "error": "Not found in Pure"})
+            continue
+
+        returned_uuid = live_src.get("uuid", "")
+        src_name = extract_name(live_src.get("name", {}))
+
+        # UUID identity
+        if returned_uuid != source_uuid:
+            issues.append({"uuid": source_uuid, "error": f"Already merged — resolves to {src_name} ({returned_uuid[:8]}...)"})
+            continue
+
+        # Approved check
+        src_step = extract_workflow(live_src).lower().replace(" ", "")
+        if "approved" in src_step and "forapproval" not in src_step:
+            issues.append({"uuid": source_uuid, "error": f"Is an approved org ({src_name}) — cannot merge approved into approved"})
+            continue
+
+        # ROR mismatch
+        src_ror = get_ror_id(live_src)
+        if src_ror and live_target_ror and src_ror != live_target_ror:
+            issues.append({"uuid": source_uuid, "error": f"ROR mismatch: {src_ror} vs target {live_target_ror}"})
+            continue
+
+        valid.append(source_uuid)
+
+    return {"valid": valid, "issues": issues}
 
 
 @app.post("/api/organizations/merge")

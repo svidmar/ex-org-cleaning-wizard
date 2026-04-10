@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { MergeGroup, Organization } from "../types";
-import { fetchMergeCandidates, mergeOrganizations } from "../api";
+import { fetchMergeCandidates, mergeOrganizations, validateMerge } from "../api";
 import { WorkflowBadge, ScoreBadge } from "../components/badges";
 import { CopyableUuid } from "../components/CopyableUuid";
 import { DependencyInfo } from "../components/DependencyInfo";
@@ -27,6 +27,7 @@ export function MergeView({
   // Track whether to skip ROR linking per group
   const [skipRor, setSkipRor] = useState<Record<number, boolean>>({});
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
 
   // Track deselected UUIDs per group (by index). Everything is selected by default.
   const [deselected, setDeselected] = useState<Record<number, Set<string>>>(
@@ -284,19 +285,53 @@ export function MergeView({
                         </div>
                       </div>
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           setMergeError(null);
-                          setConfirmMerge({
-                            group: { ...g, approved: [target] },
-                            selected,
-                            linkRor: !skipRor[origIdx],
-                          });
-                        }
-                        }
-                        disabled={!canMerge || selected.length === 0}
+                          setValidating(true);
+                          try {
+                            const result = await validateMerge(
+                              target.uuid,
+                              selected.map((o) => o.uuid)
+                            );
+                            if (result.issues.length > 0) {
+                              const issueLines = result.issues.map(
+                                (iss) => {
+                                  const org = selected.find((o) => o.uuid === iss.uuid);
+                                  return `${org?.name || iss.uuid.slice(0, 8) + "..."}: ${iss.error}`;
+                                }
+                              );
+                              if (result.valid.length === 0) {
+                                setMergeError(
+                                  `All candidates failed validation:\n\n${issueLines.join("\n")}`
+                                );
+                                return;
+                              }
+                              setMergeError(
+                                `${result.issues.length} candidate(s) removed:\n\n${issueLines.join("\n")}`
+                              );
+                            }
+                            const validSelected = selected.filter((o) =>
+                              result.valid.includes(o.uuid)
+                            );
+                            if (validSelected.length > 0) {
+                              setConfirmMerge({
+                                group: { ...g, approved: [target] },
+                                selected: validSelected,
+                                linkRor: !skipRor[origIdx],
+                              });
+                            }
+                          } catch (e) {
+                            setMergeError(
+                              `Validation failed: ${e instanceof Error ? e.message : e}`
+                            );
+                          } finally {
+                            setValidating(false);
+                          }
+                        }}
+                        disabled={!canMerge || selected.length === 0 || validating}
                         className="shrink-0 rounded-lg bg-[#0e8563] px-4 py-2 text-xs font-medium text-white hover:bg-[#0e8563]/80 disabled:opacity-30"
                       >
-                        Merge {selected.length > 0 ? `(${selected.length})` : ""}
+                        {validating ? "Validating..." : `Merge ${selected.length > 0 ? `(${selected.length})` : ""}`}
                       </button>
                     </div>
 
