@@ -6,6 +6,26 @@ Designed for institutions with tens of thousands of external organizations where
 
 > **Use at your own risk.** Merging external organizations in Pure is **irreversible**. There is no undo. While the tool maintains an audit trail and requires human confirmation before every merge, reversing a wrong merge means manually recreating the organization and reassigning all its associations — which is painful even with the CSV export. Start with high-confidence matches, review carefully, and when in doubt, skip.
 
+## Safety checks
+
+The local SQLite database is treated as a **hint** for what might be a duplicate, not as the source of truth. Every merge action — both validation and execution — re-fetches live data from Pure and applies four checks against each merge candidate. These checks run twice:
+
+1. **When you click Merge** in the merge group card (`POST /api/organizations/validate-merge`) — the confirm modal only shows pre-validated candidates
+2. **When you click Confirm Merge** in the modal (`POST /api/organizations/merge`) — the same checks run again before any payload is sent to Pure
+
+For each candidate the backend verifies:
+
+- **UUID identity** — fetches the candidate from Pure and verifies the returned UUID matches what was requested. Pure redirects fetches of merged UUIDs to the surviving org, so a mismatch means the candidate was already consumed by a previous merge. Skipped.
+- **previousUuids** — checks the target's `previousUuids` array. If the candidate is already there, it's already been merged into this target. Skipped.
+- **Approved status** — refuses to merge an approved org into another approved org. The candidate must be `for approval` (or similar) in Pure's live data.
+- **ROR ID mismatch** — if the candidate has a ROR ID linked in Pure that differs from the target's, they're treated as different organizations. Skipped.
+
+The `link-ror` endpoint also verifies UUID identity before writing — preventing a ROR ID from being written to the wrong org if the UUID was already merged.
+
+Sources that fail any check are skipped (not merged) and reported in the response with the reason. Valid sources still merge normally.
+
+The Dashboard also surfaces a warning if any organizations have **multiple ROR IDs**, which is usually a sign of an incorrect merge or data entry error.
+
 ## How it works
 
 1. **Sync** all external organizations from your Pure instance into a local SQLite database
