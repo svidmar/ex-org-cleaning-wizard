@@ -185,6 +185,11 @@ export function ReviewView({
                 {orgDetail.country}
               </span>
             )}
+            {orgDetail.pureType && (
+              <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                {orgDetail.pureType}
+              </span>
+            )}
           </div>
 
           <div className="mt-3">
@@ -300,12 +305,22 @@ export function ReviewView({
                     </div>
 
                     <div className="mt-1 flex flex-wrap gap-1.5">
-                      <ScoreBadge score={c.score} />
+                      {c.matchingType !== "search" && (
+                        <ScoreBadge score={c.score} />
+                      )}
                       <MatchTypeBadge type={c.matchingType} />
                       <CountryBadge
                         pureCountry={orgDetail.country}
                         rorCountry={c.country}
                       />
+                      {c.types.map((t) => (
+                        <span
+                          key={t}
+                          className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700"
+                        >
+                          {t}
+                        </span>
+                      ))}
                     </div>
 
                     {c.city && (
@@ -389,7 +404,9 @@ export function ReviewView({
               {selectedRor.country || "Unknown"}
             </p>
             <div className="flex gap-2">
-              <ScoreBadge score={selectedRor.score} />
+              {selectedRor.matchingType !== "search" && (
+                <ScoreBadge score={selectedRor.score} />
+              )}
               <MatchTypeBadge type={selectedRor.matchingType} />
               <CountryBadge
                 pureCountry={orgDetail.country}
