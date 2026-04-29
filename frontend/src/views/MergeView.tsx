@@ -34,6 +34,43 @@ export function MergeView({
     {}
   );
 
+  // Hidden duplicate groups (false positives) — persisted in localStorage.
+  // Key: `${rorId}|${country}` so it survives reloads and matches on the
+  // same identity used to dedupe groups.
+  const HIDDEN_KEY = "mergeView.hiddenGroups";
+  const [hidden, setHidden] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(HIDDEN_KEY);
+      return new Set<string>(raw ? JSON.parse(raw) : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
+  const [showHidden, setShowHidden] = useState(false);
+
+  const groupKey = (g: MergeGroup) => `${g.rorId}|${g.country}`;
+
+  const persistHidden = (next: Set<string>) => {
+    setHidden(next);
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]));
+    } catch {
+      // ignore quota errors
+    }
+  };
+
+  const hideGroup = (g: MergeGroup) => {
+    const next = new Set(hidden);
+    next.add(groupKey(g));
+    persistHidden(next);
+  };
+
+  const unhideGroup = (g: MergeGroup) => {
+    const next = new Set(hidden);
+    next.delete(groupKey(g));
+    persistHidden(next);
+  };
+
   const loadGroups = useCallback(async () => {
     setLoading(true);
     try {
@@ -179,20 +216,27 @@ export function MergeView({
 
       {(() => {
         const q = search.toLowerCase().trim();
-        const filtered = q
-          ? groups.filter((g) => {
-              const allNames = [
-                ...g.approved.map((o) => o.name),
-                ...g.forApproval.map((o) => o.name),
-              ];
-              return (
-                allNames.some((n) => n.toLowerCase().includes(q)) ||
-                (g.rorName && g.rorName.toLowerCase().includes(q)) ||
-                g.rorId.toLowerCase().includes(q) ||
-                (g.country && g.country.toLowerCase().includes(q))
-              );
-            })
-          : groups;
+        const matchesSearch = (g: MergeGroup) => {
+          if (!q) return true;
+          const allNames = [
+            ...g.approved.map((o) => o.name),
+            ...g.forApproval.map((o) => o.name),
+          ];
+          return (
+            allNames.some((n) => n.toLowerCase().includes(q)) ||
+            (g.rorName && g.rorName.toLowerCase().includes(q)) ||
+            g.rorId.toLowerCase().includes(q) ||
+            (g.country && g.country.toLowerCase().includes(q))
+          );
+        };
+
+        const visibleGroups = groups.filter((g) => {
+          if (!matchesSearch(g)) return false;
+          if (!showHidden && hidden.has(groupKey(g))) return false;
+          return true;
+        });
+        const hiddenCount = groups.filter((g) => hidden.has(groupKey(g))).length;
+        const filtered = visibleGroups;
 
         return (
           <>
@@ -225,10 +269,22 @@ export function MergeView({
                 duplicates will appear here.
               </div>
             ) : (
-              <div className="mb-3 text-sm text-gray-500">
-                {search
-                  ? `${filtered.length} of ${groups.length} group(s)`
-                  : `${groups.length} duplicate group(s)`}
+              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
+                <span>
+                  {search
+                    ? `${filtered.length} of ${groups.length} group(s)`
+                    : `${filtered.length} duplicate group(s)`}
+                </span>
+                {hiddenCount > 0 && (
+                  <button
+                    onClick={() => setShowHidden((v) => !v)}
+                    className="rounded-full border border-gray-300 px-2.5 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    {showHidden
+                      ? `Hide ${hiddenCount} hidden group(s)`
+                      : `Show ${hiddenCount} hidden group(s)`}
+                  </button>
+                )}
               </div>
             )}
 
@@ -243,11 +299,12 @@ export function MergeView({
                 const canMerge = !!chosenTargetUuid;
                 const targetHasRor = target?.hasRor;
                 const selected = getSelected(origIdx, g);
+                const isHidden = hidden.has(groupKey(g));
 
                 return (
                   <div
                     key={origIdx}
-                    className="rounded-xl border border-gray-200 bg-white p-4"
+                    className={`rounded-xl border bg-white p-4 ${isHidden ? "border-gray-200 opacity-60" : "border-gray-200"}`}
                   >
                     {/* Header */}
                     <div className="flex items-start justify-between gap-4">
@@ -257,6 +314,11 @@ export function MergeView({
                             {target?.name || "Select a merge target"}
                           </span>
                           {canMerge && <WorkflowBadge step="Approved" />}
+                          {target?.pureType && (
+                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700">
+                              {target.pureType}
+                            </span>
+                          )}
                           {canMerge && !targetHasRor && (
                             <span className="rounded bg-[#594fbf]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#594fbf]">
                               + link ROR
@@ -282,8 +344,28 @@ export function MergeView({
                           <span>
                             {selected.length}/{g.forApproval.length} selected
                           </span>
+                          {target && (
+                            <>
+                              <span className="text-gray-300">|</span>
+                              <CopyableUuid uuid={target.uuid} />
+                            </>
+                          )}
                         </div>
                       </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          onClick={() =>
+                            isHidden ? unhideGroup(g) : hideGroup(g)
+                          }
+                          title={
+                            isHidden
+                              ? "Show this group again"
+                              : "Hide this group (false positive)"
+                          }
+                          className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                        >
+                          {isHidden ? "Unhide" : "Hide"}
+                        </button>
                       <button
                         onClick={async () => {
                           setMergeError(null);
@@ -333,6 +415,7 @@ export function MergeView({
                       >
                         {validating ? "Validating..." : `Merge ${selected.length > 0 ? `(${selected.length})` : ""}`}
                       </button>
+                      </div>
                     </div>
 
                     {/* Option to skip ROR linking */}
@@ -383,8 +466,15 @@ export function MergeView({
                                 className="mt-0.5 shrink-0"
                               />
                               <div className="min-w-0 flex-1">
-                                <div className="font-medium text-gray-900 truncate">
-                                  {o.name}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-medium text-gray-900 truncate">
+                                    {o.name}
+                                  </span>
+                                  {o.pureType && (
+                                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700">
+                                      {o.pureType}
+                                    </span>
+                                  )}
                                 </div>
                                 <CopyableUuid uuid={o.uuid} />
                                 <div className="mt-1 flex flex-wrap items-center gap-x-2 text-gray-500">
@@ -459,6 +549,22 @@ export function MergeView({
           onCancel={() => setConfirmMerge(null)}
         >
           <div className="space-y-3">
+            <div className="rounded-lg bg-gray-50 p-2 text-xs text-gray-600">
+              ROR:{" "}
+              <a
+                href={confirmMerge.group.rorId}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#594fbf] hover:underline"
+              >
+                {confirmMerge.group.rorName ||
+                  confirmMerge.group.rorId.replace("https://ror.org/", "")}
+              </a>{" "}
+              <span className="text-gray-400">
+                ({confirmMerge.group.rorId.replace("https://ror.org/", "")})
+              </span>
+            </div>
+
             <div>
               <div className="text-xs font-medium uppercase text-gray-400 mb-1">
                 Target (survivor)
@@ -478,12 +584,17 @@ export function MergeView({
                   {!o.hasRor && confirmMerge.linkRor && (
                     <div className="mt-2 rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
                       ROR ID{" "}
-                      <span className="font-mono">
+                      <a
+                        href={confirmMerge.group.rorId}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono underline hover:text-blue-900"
+                      >
                         {confirmMerge.group.rorId.replace(
                           "https://ror.org/",
                           ""
                         )}
-                      </span>{" "}
+                      </a>{" "}
                       will be linked to this org
                     </div>
                   )}
@@ -575,6 +686,11 @@ function OrgRow({
         >
           <WorkflowBadge step="For approval" />
           <span className="flex-1 text-gray-700 truncate">{org.name}</span>
+          {org.pureType && (
+            <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700">
+              {org.pureType}
+            </span>
+          )}
           {org.bestMatchScore != null && (
             <ScoreBadge score={org.bestMatchScore} />
           )}

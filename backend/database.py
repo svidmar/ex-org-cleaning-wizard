@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     synced_at       TEXT NOT NULL,
     best_match_score    REAL,
     best_match_ror_id   TEXT,
-    best_match_chosen   INTEGER DEFAULT 0
+    best_match_chosen   INTEGER DEFAULT 0,
+    pure_type       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_org_workflow ON organizations(workflow_step);
@@ -95,6 +96,11 @@ async def get_db() -> aiosqlite.Connection:
         await _db.execute("PRAGMA journal_mode=WAL")
         await _db.execute("PRAGMA foreign_keys=ON")
         await _db.executescript(SCHEMA)
+        # Idempotent migration: add columns introduced after initial schema
+        try:
+            await _db.execute("ALTER TABLE organizations ADD COLUMN pure_type TEXT")
+        except Exception:
+            pass  # column already exists
         # Initialize job_state rows
         await _db.execute(
             "INSERT OR IGNORE INTO job_state (job_name, status) VALUES ('sync', 'idle')"
@@ -128,15 +134,16 @@ async def upsert_organization(org: dict):
     await db.execute(
         """INSERT INTO organizations
            (uuid, name, name_locales, country, workflow_step, has_ror, ror_id,
-            identifiers, version, pure_url, synced_at)
+            identifiers, version, pure_url, synced_at, pure_type)
            VALUES (:uuid, :name, :name_locales, :country, :workflow_step, :has_ror,
-                   :ror_id, :identifiers, :version, :pure_url, :synced_at)
+                   :ror_id, :identifiers, :version, :pure_url, :synced_at, :pure_type)
            ON CONFLICT(uuid) DO UPDATE SET
                 name=excluded.name, name_locales=excluded.name_locales,
                 country=excluded.country, workflow_step=excluded.workflow_step,
                 has_ror=excluded.has_ror, ror_id=excluded.ror_id,
                 identifiers=excluded.identifiers, version=excluded.version,
-                pure_url=excluded.pure_url, synced_at=excluded.synced_at
+                pure_url=excluded.pure_url, synced_at=excluded.synced_at,
+                pure_type=excluded.pure_type
         """,
         {**org, "synced_at": _now()},
     )
@@ -150,15 +157,16 @@ async def upsert_organization_batch(orgs: list[dict]):
         await db.execute(
             """INSERT INTO organizations
                (uuid, name, name_locales, country, workflow_step, has_ror, ror_id,
-                identifiers, version, pure_url, synced_at)
+                identifiers, version, pure_url, synced_at, pure_type)
                VALUES (:uuid, :name, :name_locales, :country, :workflow_step, :has_ror,
-                       :ror_id, :identifiers, :version, :pure_url, :synced_at)
+                       :ror_id, :identifiers, :version, :pure_url, :synced_at, :pure_type)
                ON CONFLICT(uuid) DO UPDATE SET
                     name=excluded.name, name_locales=excluded.name_locales,
                     country=excluded.country, workflow_step=excluded.workflow_step,
                     has_ror=excluded.has_ror, ror_id=excluded.ror_id,
                     identifiers=excluded.identifiers, version=excluded.version,
-                    pure_url=excluded.pure_url, synced_at=excluded.synced_at
+                    pure_url=excluded.pure_url, synced_at=excluded.synced_at,
+                    pure_type=excluded.pure_type
             """,
             {**org, "synced_at": now},
         )

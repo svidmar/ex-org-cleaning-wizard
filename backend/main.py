@@ -188,6 +188,7 @@ async def list_organizations(
         item["bestMatchChosen"] = bool(item.pop("best_match_chosen", 0))
         item["pureUrl"] = item.pop("pure_url", "")
         item["syncedAt"] = item.pop("synced_at", "")
+        item["pureType"] = item.pop("pure_type", None)
 
     return {"items": items, "total": total, "offset": offset, "size": size}
 
@@ -209,6 +210,7 @@ async def get_organization(uuid: str):
     org["bestMatchChosen"] = bool(org.pop("best_match_chosen", 0))
     org["pureUrl"] = org.pop("pure_url", "")
     org["syncedAt"] = org.pop("synced_at", "")
+    org["pureType"] = org.pop("pure_type", None)
 
     # Parse ROR match fields
     for m in org.get("ror_matches", []):
@@ -319,6 +321,7 @@ async def merge_candidates(
                 org["bestMatchScore"] = org.pop("best_match_score", None)
                 org["bestMatchRorId"] = org.pop("best_match_ror_id", None)
                 org["pureUrl"] = org.pop("pure_url", "")
+                org["pureType"] = org.pop("pure_type", None)
         g["forApproval"] = g.pop("for_approval")
         g["rorId"] = g.pop("ror_id")
         g["rorName"] = g.pop("ror_name", None)

@@ -13,6 +13,7 @@ export interface Organization {
   bestMatchRorId: string | null;
   bestMatchChosen: boolean;
   syncedAt: string;
+  pureType: string | null;
 }
 
 export interface Identifier {
