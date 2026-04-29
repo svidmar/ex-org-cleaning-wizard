@@ -31,7 +31,7 @@ class RorClient:
             await self._client.aclose()
             self._client = None
 
-    async def match(self, name: str, limit: int = 10) -> list[dict]:
+    async def match(self, name: str, limit: int = 25) -> list[dict]:
         """Match an organization name against ROR affiliation endpoint.
 
         Handles both v1 (local Docker) and v2 (public API) response formats.

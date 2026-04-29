@@ -185,6 +185,11 @@ export function ReviewView({
                 {orgDetail.country}
               </span>
             )}
+            {orgDetail.pureType && (
+              <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                {orgDetail.pureType}
+              </span>
+            )}
           </div>
 
           <div className="mt-3">
@@ -306,6 +311,14 @@ export function ReviewView({
                         pureCountry={orgDetail.country}
                         rorCountry={c.country}
                       />
+                      {c.types.map((t) => (
+                        <span
+                          key={t}
+                          className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700"
+                        >
+                          {t}
+                        </span>
+                      ))}
                     </div>
 
                     {c.city && (
