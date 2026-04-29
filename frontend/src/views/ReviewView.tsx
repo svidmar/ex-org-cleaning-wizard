@@ -305,7 +305,9 @@ export function ReviewView({
                     </div>
 
                     <div className="mt-1 flex flex-wrap gap-1.5">
-                      <ScoreBadge score={c.score} />
+                      {c.matchingType !== "search" && (
+                        <ScoreBadge score={c.score} />
+                      )}
                       <MatchTypeBadge type={c.matchingType} />
                       <CountryBadge
                         pureCountry={orgDetail.country}
@@ -402,7 +404,9 @@ export function ReviewView({
               {selectedRor.country || "Unknown"}
             </p>
             <div className="flex gap-2">
-              <ScoreBadge score={selectedRor.score} />
+              {selectedRor.matchingType !== "search" && (
+                <ScoreBadge score={selectedRor.score} />
+              )}
               <MatchTypeBadge type={selectedRor.matchingType} />
               <CountryBadge
                 pureCountry={orgDetail.country}
