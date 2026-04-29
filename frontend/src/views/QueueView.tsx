@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from "react";
 import type { Organization } from "../types";
 import { fetchOrganizations, fetchCountries } from "../api";
 import { WorkflowBadge, ScoreBadge } from "../components/badges";
 import { CopyableUuid } from "../components/CopyableUuid";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 100;
 
 interface QueuePreset {
   id: string;
@@ -13,6 +13,27 @@ interface QueuePreset {
   params: Record<string, unknown>;
   color: string;
 }
+
+export type QueueMode =
+  | { type: "preset"; presetId: string }
+  | { type: "search"; query: string }
+  | { type: "none" };
+
+export interface QueueState {
+  mode: QueueMode;
+  selectedCountry: string;
+  orgs: Organization[];
+  total: number;
+  offset: number;
+}
+
+export const INITIAL_QUEUE_STATE: QueueState = {
+  mode: { type: "none" },
+  selectedCountry: "",
+  orgs: [],
+  total: 0,
+  offset: 0,
+};
 
 const PRESETS: QueuePreset[] = [
   {
@@ -64,19 +85,26 @@ const PRESETS: QueuePreset[] = [
 ];
 
 export function QueueView({
+  state,
+  setState,
   onSelectOrg,
 }: {
+  state: QueueState;
+  setState: Dispatch<SetStateAction<QueueState>>;
   onSelectOrg: (org: Organization) => void;
 }) {
-  const [activePreset, setActivePreset] = useState<QueuePreset | null>(null);
-  const [orgs, setOrgs] = useState<Organization[]>([]);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
+  const { mode, selectedCountry, orgs, total, offset } = state;
+  const activePreset =
+    mode.type === "preset"
+      ? PRESETS.find((p) => p.id === mode.presetId) ?? null
+      : null;
+  const searchActive = mode.type === "search";
+
+  const [searchInput, setSearchInput] = useState(
+    mode.type === "search" ? mode.query : ""
+  );
   const [loading, setLoading] = useState(false);
-  const [searchInput, setSearchInput] = useState("");
-  const [searchActive, setSearchActive] = useState(false);
   const [countries, setCountries] = useState<string[]>([]);
-  const [selectedCountry, setSelectedCountry] = useState("");
 
   // Load country list once
   useEffect(() => {
@@ -84,56 +112,70 @@ export function QueueView({
   }, []);
 
   const loadOrgs = useCallback(
-    async (params: Record<string, unknown>, newOffset = 0) => {
+    async (
+      params: Record<string, unknown>,
+      newOffset = 0,
+      country?: string
+    ) => {
+      const useCountry = country !== undefined ? country : selectedCountry;
       setLoading(true);
       try {
         const data = await fetchOrganizations({
           ...params,
           offset: newOffset,
           size: PAGE_SIZE,
-          country: selectedCountry || undefined,
+          country: useCountry || undefined,
         } as Parameters<typeof fetchOrganizations>[0]);
-        setOrgs(data.items);
-        setTotal(data.total);
-        setOffset(newOffset);
+        setState((s) => ({
+          ...s,
+          orgs: data.items,
+          total: data.total,
+          offset: newOffset,
+          selectedCountry: useCountry,
+        }));
       } catch {
-        setOrgs([]);
-        setTotal(0);
+        setState((s) => ({
+          ...s,
+          orgs: [],
+          total: 0,
+          offset: newOffset,
+          selectedCountry: useCountry,
+        }));
       } finally {
         setLoading(false);
       }
     },
-    [selectedCountry]
+    [selectedCountry, setState]
   );
 
   const activatePreset = useCallback(
     (preset: QueuePreset) => {
-      setActivePreset(preset);
-      setSearchActive(false);
+      setState((s) => ({
+        ...s,
+        mode: { type: "preset", presetId: preset.id },
+      }));
       setSearchInput("");
       loadOrgs(preset.params, 0);
     },
-    [loadOrgs]
+    [loadOrgs, setState]
   );
 
   const doSearch = useCallback(() => {
-    if (!searchInput.trim()) return;
-    setActivePreset(null);
-    setSearchActive(true);
-    loadOrgs({ search: searchInput.trim() }, 0);
-  }, [searchInput, loadOrgs]);
+    const q = searchInput.trim();
+    if (!q) return;
+    setState((s) => ({ ...s, mode: { type: "search", query: q } }));
+    loadOrgs({ search: q }, 0);
+  }, [searchInput, loadOrgs, setState]);
 
   const goBack = () => {
-    setActivePreset(null);
-    setSearchActive(false);
-    setOrgs([]);
-    setTotal(0);
+    setState(INITIAL_QUEUE_STATE);
+    setSearchInput("");
   };
 
   const currentParams = activePreset
     ? activePreset.params
-    : searchActive
-      ? { search: searchInput.trim() }
+    : mode.type === "search"
+      ? { search: mode.query }
       : {};
 
   return (
@@ -197,19 +239,15 @@ export function QueueView({
               &larr; Back to queues
             </button>
             <span className="text-sm font-medium text-gray-700">
-              {activePreset?.title || `Search: "${searchInput}"`}
+              {activePreset?.title ||
+                (mode.type === "search" ? `Search: "${mode.query}"` : "")}
             </span>
 
             {countries.length > 0 && (
               <select
                 value={selectedCountry}
                 onChange={(e) => {
-                  setSelectedCountry(e.target.value);
-                  // Re-run with country filter
-                  loadOrgs(
-                    { ...currentParams, country: e.target.value || undefined },
-                    0
-                  );
+                  loadOrgs(currentParams, 0, e.target.value);
                 }}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:outline-none"
               >

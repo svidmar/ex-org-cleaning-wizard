@@ -4,7 +4,7 @@ import { fetchStats } from "./api";
 import { useToasts, ToastContainer } from "./components/Toast";
 import { cn } from "./components/utils";
 import { DashboardView } from "./views/DashboardView";
-import { QueueView } from "./views/QueueView";
+import { QueueView, INITIAL_QUEUE_STATE, type QueueState } from "./views/QueueView";
 import { ReviewView } from "./views/ReviewView";
 import { MergeView } from "./views/MergeView";
 import { HistoryView } from "./views/HistoryView";
@@ -26,6 +26,7 @@ export default function App() {
   const { toasts, addToast } = useToasts();
   const [view, setView] = useState<View>("dashboard");
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
+  const [queueState, setQueueState] = useState<QueueState>(INITIAL_QUEUE_STATE);
   const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
@@ -39,6 +40,13 @@ export default function App() {
   const selectOrg = (org: Organization) => {
     setSelectedOrg(org);
     setView("review");
+  };
+
+  const updateQueueOrg = (updated: Organization) => {
+    setQueueState((s) => ({
+      ...s,
+      orgs: s.orgs.map((o) => (o.uuid === updated.uuid ? updated : o)),
+    }));
   };
 
   const tabs: { id: View; label: string }[] = [
@@ -99,11 +107,20 @@ export default function App() {
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         {view === "dashboard" && <DashboardView />}
-        {view === "queue" && <QueueView onSelectOrg={selectOrg} />}
+        {view === "queue" && (
+          <QueueView
+            state={queueState}
+            setState={setQueueState}
+            onSelectOrg={selectOrg}
+          />
+        )}
         {view === "review" &&
           (selectedOrg ? (
             <ReviewView
               org={selectedOrg}
+              queueOrgs={queueState.orgs}
+              onChangeOrg={setSelectedOrg}
+              onUpdateOrg={updateQueueOrg}
               onBack={() => setView("queue")}
               addToast={addToast}
             />
