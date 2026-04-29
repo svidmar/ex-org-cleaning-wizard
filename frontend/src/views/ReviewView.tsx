@@ -17,10 +17,16 @@ import { ConfirmModal } from "../components/ConfirmModal";
 
 export function ReviewView({
   org: initialOrg,
+  queueOrgs = [],
+  onChangeOrg,
+  onUpdateOrg,
   onBack,
   addToast,
 }: {
   org: Organization;
+  queueOrgs?: Organization[];
+  onChangeOrg?: (org: Organization) => void;
+  onUpdateOrg?: (org: Organization) => void;
   onBack: () => void;
   addToast: (msg: string, type: "success" | "error" | "info") => void;
 }) {
@@ -31,8 +37,20 @@ export function ReviewView({
   const [linking, setLinking] = useState(false);
   const [rematching, setRematching] = useState(false);
 
+  const currentIndex = queueOrgs.findIndex((o) => o.uuid === initialOrg.uuid);
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < queueOrgs.length - 1;
+
+  const goPrev = () => {
+    if (hasPrev && onChangeOrg) onChangeOrg(queueOrgs[currentIndex - 1]);
+  };
+  const goNext = () => {
+    if (hasNext && onChangeOrg) onChangeOrg(queueOrgs[currentIndex + 1]);
+  };
+
   const loadDetail = useCallback(async () => {
     setLoading(true);
+    setSelectedRor(null);
     try {
       const detail = await fetchOrganization(initialOrg.uuid);
       setOrgDetail(detail);
@@ -40,8 +58,10 @@ export function ReviewView({
       if (detail.rorMatches.length > 0 && detail.rorMatches[0].score >= 0.7) {
         setSelectedRor(detail.rorMatches[0]);
       }
+      return detail;
     } catch (e) {
       addToast(`Failed to load org details: ${e}`, "error");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -67,13 +87,26 @@ export function ReviewView({
       }
       setConfirmLink(false);
       // Refresh
-      await loadDetail();
+      const updated = await loadDetail();
+      if (updated && onUpdateOrg) onUpdateOrg(updated);
+      // Auto-advance to next item in queue if available
+      if (hasNext && onChangeOrg) onChangeOrg(queueOrgs[currentIndex + 1]);
     } catch (e) {
       addToast(`Failed to link: ${e}`, "error");
     } finally {
       setLinking(false);
     }
-  }, [orgDetail, selectedRor, addToast, loadDetail]);
+  }, [
+    orgDetail,
+    selectedRor,
+    addToast,
+    loadDetail,
+    onUpdateOrg,
+    hasNext,
+    onChangeOrg,
+    queueOrgs,
+    currentIndex,
+  ]);
 
   const doRematch = useCallback(async () => {
     if (!orgDetail) return;
@@ -81,13 +114,14 @@ export function ReviewView({
     try {
       await rematchOrganization(orgDetail.uuid);
       addToast("Re-matched against ROR", "success");
-      await loadDetail();
+      const updated = await loadDetail();
+      if (updated && onUpdateOrg) onUpdateOrg(updated);
     } catch (e) {
       addToast(`Re-match failed: ${e}`, "error");
     } finally {
       setRematching(false);
     }
-  }, [orgDetail, addToast, loadDetail]);
+  }, [orgDetail, addToast, loadDetail, onUpdateOrg]);
 
   if (loading) {
     return <div className="py-12 text-center text-gray-400">Loading...</div>;
@@ -105,12 +139,35 @@ export function ReviewView({
 
   return (
     <div>
-      <button
-        onClick={onBack}
-        className="mb-4 text-sm text-[#594fbf] hover:underline"
-      >
-        &larr; Back to queue
-      </button>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <button
+          onClick={onBack}
+          className="text-sm text-[#594fbf] hover:underline"
+        >
+          &larr; Back to queue
+        </button>
+        {queueOrgs.length > 0 && currentIndex >= 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 tabular-nums">
+              {currentIndex + 1} of {queueOrgs.length}
+            </span>
+            <button
+              onClick={goPrev}
+              disabled={!hasPrev}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-30"
+            >
+              &larr; Previous
+            </button>
+            <button
+              onClick={goNext}
+              disabled={!hasNext}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-30"
+            >
+              Next &rarr;
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left: Pure org details */}
@@ -258,10 +315,20 @@ export function ReviewView({
                     )}
 
                     {c.aliases.length > 0 && (
-                      <div className="mt-1 text-xs text-gray-400">
-                        Also known as: {c.aliases.slice(0, 3).join(", ")}
-                        {c.aliases.length > 3 &&
-                          ` +${c.aliases.length - 3} more`}
+                      <div className="mt-1 text-xs text-gray-500">
+                        <span className="font-medium text-gray-600">
+                          Aliases:
+                        </span>{" "}
+                        {c.aliases.join(", ")}
+                      </div>
+                    )}
+
+                    {c.labels.length > 0 && (
+                      <div className="mt-1 text-xs text-gray-500">
+                        <span className="font-medium text-gray-600">
+                          Labels:
+                        </span>{" "}
+                        {c.labels.join(", ")}
                       </div>
                     )}
 

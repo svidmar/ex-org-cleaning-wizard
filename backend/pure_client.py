@@ -108,6 +108,23 @@ def workflow_step(org: dict) -> str:
     return "unknown"
 
 
+def pure_type(org: dict) -> Optional[str]:
+    """Extract organization type label (e.g. 'University', 'Hospital') from org."""
+    t = org.get("type") or {}
+    if not isinstance(t, dict):
+        return None
+    term = t.get("term") or {}
+    if isinstance(term, dict) and term:
+        for locale in ("en_GB", "en_US", "da_DK"):
+            if locale in term:
+                return term[locale]
+        return next(iter(term.values()))
+    uri = t.get("uri") or ""
+    if uri:
+        return uri.rsplit("/", 1)[-1] or None
+    return None
+
+
 def format_org(org: dict) -> dict:
     """Format a Pure org into a clean dict for database storage."""
     return {
@@ -121,6 +138,7 @@ def format_org(org: dict) -> dict:
         "identifiers": json.dumps(org.get("identifiers", [])),
         "version": org.get("version"),
         "pure_url": org.get("info", {}).get("portalUrl", ""),
+        "pure_type": pure_type(org),
     }
 
 
